@@ -1,0 +1,115 @@
+<html>
+<head>
+<title>WebRTC with Websocket</title>
+</head>
+<body>
+<script src="/socket.io/socket.io.js"></script>
+<script src="/md5.min.js"></script>
+<script type="text/javascript">
+var chat = io.connect('http://localhost:3001/chat');
+var local;
+var remote;
+var pc;
+var localStream;
+var roomKey;
+
+var init = function() {
+  setStatus("Initialize.");
+  local = document.getElementById("local");
+  remote = document.getElementById("remote");
+  roomKey = document.getElementById("roomKey");
+  navigator.webkitGetUserMedia("video",gotStream,noStream);
+}
+
+var gotStream = function(stream) {
+  setStatus("Get local stream. Please input Room Key. Push connect button.");
+  local.src = webkitURL.createObjectURL(stream);
+  localStream = stream;
+}
+
+var noStream = function(error) {
+  alert("noStream");
+}
+
+var sendMessage = function(message) {
+  var data = {};
+  data.name = roomKey.value;
+  data.sdp = message;
+  chat.emit('sdp',JSON.stringify(data));
+}
+
+var recvMessage = function(message) {
+  if(pc == undefined) { createPeerConnection(); } // exec second member
+  pc.processSignalingMessage(message);
+}
+
+var createPeerConnection = function() {
+  setStatus("Create PeerConnection.");
+  if (typeof webkitPeerConnection != 'undefined') {
+    pc = new webkitPeerConnection('STUN stun.ekiga.net', sendMessage);
+  } else if (typeof webkitDeprecatedPeerConnection != 'undefined') {
+    pc = new webkitDeprecatedPeerConnection('STUN stun.ekiga.net', sendMessage);
+  } else {
+    alert('failed PeerConnection');
+    return;
+  }
+  pc.addStream(localStream);
+  pc.onaddstream = function(event) {
+    setStatus("Established.");
+    remote.src = webkitURL.createObjectURL(event.stream);
+  }
+}
+
+var reservRoom = function() {
+  if(pc != undefined) { pc.close(); pc = null; }
+  var data = {};
+  data.name = roomKey.value;
+  chat.emit('room',JSON.stringify(data));  
+}
+
+chat.on('resultRoom',function (data) {
+  var json = JSON.parse(data);
+  if (data == 0) { 
+    setStatus("Found peer!");
+    if(pc == undefined) { createPeerConnection(); } // exec first member
+  } else if (data == 1) {
+    setStatus("Made room. Wait peer...");
+  } else if (data == 2) {
+    setStatus("Room is full. Please use other Room Key.");
+  } else if (data == 3) {
+    setStatus("Made room already.");
+  } else {
+    setStatus("Failed...");
+  }  
+});
+
+chat.on('resultSDP',function(data) {
+  var json = JSON.parse(data);
+  recvMessage(json);
+});
+
+var setStatus = function(text) {
+  console.log(text);
+  document.getElementById("status").innerHTML = text;
+}
+
+var generateRoomKey = function() {
+  roomKey.value = md5(Math.random().toString());
+}
+
+setTimeout(init,1);
+
+</script>
+<video id="local" width="320" height="240" autoplay></video>
+<video id="remote" width="320" height="240" autoplay></video>
+<br />
+<form>
+Room key : <input type="text" id="roomKey" size="30" placeholder="接続先と同じKeyを入力">
+<button onclick="generateRoomKey(); return false;">Generate Room key</button>
+<button onclick="reservRoom(); return false;">Connect</button>
+<br />
+Status : <span id="status"></span>
+</form>
+</body>
+</html>
+
